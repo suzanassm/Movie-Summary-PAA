@@ -1,0 +1,8 @@
+gensim
+sentence-transformers
+hnswlib
+numpy
+pandas
+scikit-learn
+flask
+requests
