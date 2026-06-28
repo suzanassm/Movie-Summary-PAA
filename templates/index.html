@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Movie Summary</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">    
+    </head>
+    <body>
+        <h1>Pesquisar Filmes</h1>
+
+        <select name="models" id="models">
+            <option vlaue="w2v">Word to Vector</option>
+            <option value=""></option>
+            <option value=""></option>
+            <option vlaue=""></option>
+        </select>
+        <input type="text" id="query" placeholder="Digite Sua Busca">
+        <button onclick="buscar()">Buscar</button>
+
+        <div id="resultado"></div>
+
+        <script src="{{ url_for('static', filename='script.js') }}"></script>
+    </body>
+</html>

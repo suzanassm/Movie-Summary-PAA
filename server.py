@@ -1,8 +1,12 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from search import search
 from llm_response import generate_answer
 
 app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return render_template('index.html')
 
 @app.route('/ask', methods=['POST'])
 def ask():
