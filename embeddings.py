@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 import hnswlib
 import pickle
+import os
 
 # Carregar dados processados
 df = pd.read_csv('data/processed.csv')
@@ -12,6 +13,7 @@ df = pd.read_csv('data/processed.csv')
 # --- Word2Vec ---
 sentences = [text.split() for text in df['summary_clean']]
 w2v_model = Word2Vec(sentences, vector_size=100, window=5, min_count=2, workers=4)
+os.makedirs("models", exist_ok=True)
 w2v_model.save('models/w2v_model.bin')
 
 # Gerar e salvar embeddings Word2Vec (faltava isso!)
