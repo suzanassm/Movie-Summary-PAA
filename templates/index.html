@@ -7,11 +7,10 @@
     <body>
         <h1>Pesquisar Filmes</h1>
 
-        <select name="models" id="models">
-            <option vlaue="w2v">Word to Vector</option>
-            <option value=""></option>
-            <option value=""></option>
-            <option vlaue=""></option>
+        <select name="metodos" id="metodos">
+            <option value="w2v">Word2Vec Average</option>
+            <option value="hnsw">HNSW Search</option>
+            <option value="tfidf">TF-IDF</option>
         </select>
         <input type="text" id="query" placeholder="Digite Sua Busca">
         <button onclick="buscar()">Buscar</button>

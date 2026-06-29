@@ -49,7 +49,7 @@ def search_only():
         return jsonify({
             'query': query,
             'method': method,
-            'results': results[['title', 'score']].to_dict(orient='records')
+            'results': results['title'].to_list()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
