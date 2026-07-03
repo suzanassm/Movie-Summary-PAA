@@ -7,22 +7,34 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import hnswlib
 
-# Carregar dados
-df = pd.read_csv('data/processed.csv')
+loaded = False
 
-# Carregar modelos
-w2v_model = Word2Vec.load('models/w2v_model.bin')
-sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+def load_models():
+    global loaded, df, w2v_model, sbert_model, tfidf, tfidf_matrix
+    global w2v_embeddings, index
 
-with open('models/tfidf.pkl', 'rb') as f:
-    tfidf, tfidf_matrix = pickle.load(f)
+    if loaded:
+        return
 
-w2v_embeddings = np.load('models/w2v_embeddings.npy')
+    # Carregar dados
+    df = pd.read_csv('data/processed.csv')
 
-# Carregar índice HNSW
-index = hnswlib.Index(space='cosine', dim=384)
-index.load_index('models/hnsw_index.bin')
-index.set_ef(50)
+    # Carregar modelos
+    w2v_model = Word2Vec.load('models/w2v_model.bin')
+    sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    with open('models/tfidf.pkl', 'rb') as f:
+        tfidf, tfidf_matrix = pickle.load(f)
+
+    #w2v_embeddings = np.load('models/w2v_embeddings.npy')
+    w2v_embeddings = np.load('models/w2v_embeddings.npy', mmap_mode='r')
+
+    # Carregar índice HNSW
+    index = hnswlib.Index(space='cosine', dim=384)
+    index.load_index('models/hnsw_index.bin')
+    index.set_ef(50)
+
+    loaded = True
 
 # Limpeza de texto
 def clean_text(text):
@@ -39,6 +51,9 @@ def w2v_embed(text):
 
 # Função principal de busca
 def search(query, top_k=5, method='hnsw'):
+
+    load_models()
+
     if method == 'hnsw':
         query_emb = sbert_model.encode([query])
         labels, distances = index.knn_query(query_emb, k=top_k)
