@@ -50,8 +50,6 @@ curl -O http://www.cs.cmu.edu/~ark/personas/data/MovieSummaries.tar.gz
 tar -xzf MovieSummaries.tar.gz
 ```
 
-Mova os arquivos extraídos para a pasta `data/`. Os dois arquivos usados são `plot_summaries.txt` e `movie.metadata.tsv`.
-
 ### 4. Pré-processar os dados e gerar os embeddings
 
 Rode nessa ordem:

@@ -38,6 +38,7 @@ np.save('models/w2v_embeddings.npy', w2v_embeddings)
 print("Word2Vec embeddings gerados!")
 
 # --- TF-IDF ---
+
 tfidf = TfidfVectorizer(max_features=10000, stop_words='english')
 tfidf_matrix = tfidf.fit_transform(df['text_for_search'])
 with open('models/tfidf.pkl', 'wb') as f:
@@ -45,9 +46,35 @@ with open('models/tfidf.pkl', 'wb') as f:
 print("TF-IDF gerado!")
 
 # --- SBERT ---
+print("Carregando SBERT...")
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
-sbert_embeddings = sbert_model.encode(df['text_for_search'].tolist(), batch_size=64, show_progress_bar=True)
+
+texts = df['text_for_search'].tolist()
+
+embeddings = []
+
+for i in range(0, len(texts), 1000):
+    batch = texts[i:i+1000]
+
+    emb = sbert_model.encode(
+        batch,
+        batch_size=32,
+        convert_to_numpy=True,
+        show_progress_bar=False
+    )
+
+    embeddings.append(emb)
+
+    if len(embeddings) % 10 == 0:
+        temp = np.vstack(embeddings)
+        np.save("models/sbert_partial.npy", temp)
+
+    print(f"{i + len(batch)}/{len(texts)} concluídos")
+
+sbert_embeddings = np.vstack(embeddings)
+
 np.save('models/sbert_embeddings.npy', sbert_embeddings)
+
 print("SBERT embeddings gerados!")
 
 # --- HNSW (construído sobre os embeddings SBERT) ---

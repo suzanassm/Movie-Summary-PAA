@@ -1,9 +1,16 @@
 import pandas as pd
 import re
 import os
+import shutil
 
-os.makedirs('data', exist_ok=True)
+os.makedirs("data", exist_ok=True)
 
+if os.path.exists("MovieSummaries"):
+    # move o conteúdo ou a própria pasta
+    shutil.move("MovieSummaries", "data")
+
+if os.path.exists("MovieSummaries.tar.gz"):
+    os.remove("MovieSummaries.tar.gz")
 # Carrega metadados
 movies = pd.read_csv('data/movie.metadata.tsv', sep='\t', header=None,
                       usecols=[0, 2], names=['movie_id', 'title'])
