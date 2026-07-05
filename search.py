@@ -20,6 +20,9 @@ def load_models():
 
     # Carrega dados
     df = pd.read_csv('data/processed.csv')
+    # Título limpo (mesma normalização usada nas queries) para permitir
+    # correspondência exata de título como sinal forte de relevância.
+    df['title_clean'] = df['title'].apply(clean_text)
 
     # Carrega modelos
     w2v_model = Word2Vec.load('models/w2v_model.bin')
@@ -29,7 +32,6 @@ def load_models():
     with open('models/tfidf.pkl', 'rb') as f:
         tfidf, tfidf_matrix = pickle.load(f)
 
-    #w2v_embeddings = np.load('models/w2v_embeddings.npy')
     w2v_embeddings = np.load('models/w2v_embeddings.npy', mmap_mode='r')
 
     # Carrega índice HNSW
@@ -42,6 +44,7 @@ def load_models():
 # Limpeza de texto
 def clean_text(text):
     text = text.lower()
+    text = text.replace('-', ' ')  # "spider-man" -> "spider man" (evita fusão indevida de tokens)
     text = re.sub(r'[^a-z0-9\s]', '', text)
     return text.strip()
 
@@ -49,14 +52,44 @@ def clean_text(text):
 def w2v_embed(text):
     # Lista simples de stop words em inglês
     stop_words = set(['the', 'a', 'an', 'in', 'on', 'at', 'for', 'with', 'about', 'to', 'of', 'movie', 'film'])
-    
+
     words_with_bigrams = bigram_phraser[text.split()]
     # Filtra palavras que estão no vocabulário e não são stop words
     words = [w for w in words_with_bigrams if w in w2v_model.wv and w not in stop_words]
     if not words:
-        # Se não sobrar palavras, retorna um vetor nulo
-        return np.zeros(100)
-    return np.mean([w2v_model.wv[w] for w in words], axis=0)
+        # Nenhuma palavra reconhecida pelo modelo: não há representação válida
+        return None
+
+    # Ponderação por TF-IDF (mean pooling ponderado, em vez de média simples).
+    # Justificativa: palavras muito frequentes no corpus (ex: "man", com ~14000
+    # ocorrências) tendem a dominar a média simples e "diluir" o significado de
+    # palavras raras e mais discriminativas (ex: "spider", ~350 ocorrências).
+    # Usamos o IDF (não o TF, que não faz sentido para uma query curta) como peso:
+    # quanto mais rara/específica a palavra no corpus, maior o peso dela na média.
+    tfidf_vocab = tfidf.vocabulary_
+    idf_values = tfidf.idf_
+
+    def get_idf(palavra):
+        if palavra in tfidf_vocab:
+            return idf_values[tfidf_vocab[palavra]]
+        # Palavra não vista pelo TF-IDF (fora do max_features=10000): peso neutro.
+        return 1.0
+
+    weights = []
+    for w in words:
+        if '_' in w:
+            # Bigrama do phraser (ex: "spider_man"): o vocabulário do TF-IDF é
+            # feito de palavras únicas, então usamos a média do IDF das partes.
+            partes = w.split('_')
+            weights.append(np.mean([get_idf(p) for p in partes]))
+        else:
+            weights.append(get_idf(w))
+
+    weights = np.array(weights)
+    vectors = np.array([w2v_model.wv[w] for w in words])
+
+    # Média ponderada: soma(peso_i * vetor_i) / soma(peso_i)
+    return np.average(vectors, axis=0, weights=weights)
 
 # Função auxiliar para Reciprocal Rank Fusion (RRF)
 def reciprocal_rank_fusion(results_lists, k=60):
@@ -73,9 +106,26 @@ def reciprocal_rank_fusion(results_lists, k=60):
         for rank, doc_id in enumerate(results):
             if doc_id not in fused_scores:
                 fused_scores[doc_id] = 0
-            fused_scores[doc_id] += 1 / (k + rank + 1) # +1 para rank baseado em 1
-    
+            fused_scores[doc_id] += 1 / (k + rank + 1)  # +1 para rank baseado em 1
+
     return fused_scores
+
+# Correspondência exata de título: sinal de altíssima confiança.
+# TF-IDF/Word2Vec avaliam o texto todo como "saco de palavras" e podem diluir
+# a importância do título em sinopses longas. Se a query bate com o título de
+# um filme, isso deveria falar mais alto que qualquer média vetorial do corpo
+# da sinopse (é o mesmo princípio usado por motores de busca reais).
+def title_match_candidates(cleaned_query):
+    query_words = set(cleaned_query.split())
+    if not query_words:
+        return []
+
+    def bate_com_titulo(title_clean):
+        title_words = set(title_clean.split())
+        return query_words.issubset(title_words)
+
+    matches = df[df['title_clean'].apply(bate_com_titulo)]
+    return matches.index.tolist()
 
 # Função principal de busca
 def search(query, top_k=5, method='hnsw'):
@@ -108,23 +158,52 @@ Hypothetical Summary:"""
         #  Busca por Palavra-chave (TF-IDF)
         query_vec = tfidf.transform([clean_text(query)])
         tfidf_sims = cosine_similarity(query_vec, tfidf_matrix)[0]
-        tfidf_candidates = tfidf_sims.argsort()[-(top_k * 4):][::-1] # Obter mais candidatos
+        tfidf_candidates = tfidf_sims.argsort()[-(top_k * 4):][::-1]  # Obter mais candidatos
 
-        # RECLASSIFICAÇÃO COM RRF 
+        # RECLASSIFICAÇÃO COM RRF
         fused_scores = reciprocal_rank_fusion([original_hnsw_candidates, hyde_hnsw_candidates, tfidf_candidates])
         reranked_ids = sorted(fused_scores.keys(), key=lambda id: fused_scores[id], reverse=True)
-        
+
         top_idx = reranked_ids[:top_k]
         results = df.iloc[top_idx][['title', 'summary']].copy()
         max_score = fused_scores[top_idx[0]] if top_idx else 0
         results['score'] = [fused_scores[i] / max_score if max_score > 0 else 0 for i in top_idx]
 
     elif method == 'w2v':
-        query_emb = w2v_embed(clean_text(query)).reshape(1, -1)
-        sims = cosine_similarity(query_emb, w2v_embeddings)[0]
-        top_idx = sims.argsort()[-top_k:][::-1]
+        cleaned = clean_text(query)
+        query_emb = w2v_embed(cleaned)
+
+        # Sinal 1: correspondência exata de título (prioridade máxima).
+        title_matches = title_match_candidates(cleaned)
+
+        # Sinal 2: busca por palavra-chave (TF-IDF) no corpo do texto.
+        query_vec = tfidf.transform([cleaned])
+        tfidf_sims = cosine_similarity(query_vec, tfidf_matrix)[0]
+        tfidf_candidates = tfidf_sims.argsort()[-(top_k * 4):][::-1]
+
+        if query_emb is None:
+            # Nenhum termo da query existe no vocabulário Word2Vec: usa título
+            # + TF-IDF como fallback, em vez de devolver uma lista vazia.
+            print(f"[w2v] Nenhuma palavra de '{query}' encontrada no vocabulário "
+                  f"Word2Vec. Usando título + palavra-chave (TF-IDF) como fallback.")
+            fused_scores = reciprocal_rank_fusion([title_matches, tfidf_candidates])
+        else:
+            # Sinal 3: similaridade vetorial Word2Vec.
+            query_emb = query_emb.reshape(1, -1)
+            w2v_sims = cosine_similarity(query_emb, w2v_embeddings)[0]
+            w2v_candidates = w2v_sims.argsort()[-(top_k * 4):][::-1]
+
+            # RECLASSIFICAÇÃO COM RRF: combina correspondência de título, busca
+            # por palavra-chave e similaridade vetorial. A lista de título vem
+            # primeiro e é passada isolada (não misturada por rank) para os
+            # filmes com título batendo subirem antes de qualquer outro sinal.
+            fused_scores = reciprocal_rank_fusion([title_matches, w2v_candidates, tfidf_candidates])
+
+        reranked_ids = sorted(fused_scores.keys(), key=lambda id: fused_scores[id], reverse=True)
+        top_idx = reranked_ids[:top_k]
         results = df.iloc[top_idx][['title', 'summary']].copy()
-        results['score'] = sims[top_idx]
+        max_score = fused_scores[top_idx[0]] if top_idx else 0
+        results['score'] = [fused_scores[i] / max_score if max_score > 0 else 0 for i in top_idx]
 
     elif method == 'tfidf':
         query_vec = tfidf.transform([clean_text(query)])
