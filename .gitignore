@@ -7,3 +7,4 @@ models/
 *.gz
 
 .python-version
+.idea/
