@@ -6,17 +6,22 @@ import shutil
 os.makedirs("data", exist_ok=True)
 
 if os.path.exists("MovieSummaries"):
-    # move o conteúdo ou a própria pasta
-    shutil.move("MovieSummaries", "data")
+
+    destino = os.path.join("data", "MovieSummaries")
+
+    if os.path.exists(destino):
+        shutil.rmtree(destino)   # remove a versão antiga
+
+    shutil.move("MovieSummaries", destino)
 
 if os.path.exists("MovieSummaries.tar.gz"):
     os.remove("MovieSummaries.tar.gz")
 # Carrega metadados
-movies = pd.read_csv('data/movie.metadata.tsv', sep='\t', header=None,
+movies = pd.read_csv('data/MovieSummaries/movie.metadata.tsv', sep='\t', header=None,
                       usecols=[0, 2], names=['movie_id', 'title'])
 
 # Carrega sinopses
-summaries = pd.read_csv('data/plot_summaries.txt', sep='\t', header=None,
+summaries = pd.read_csv('data/MovieSummaries/plot_summaries.txt', sep='\t', header=None,
                          names=['movie_id', 'summary'])
 
 # Une
